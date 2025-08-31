@@ -56,6 +56,8 @@ python app.py
 
 **Access**: `http://localhost:5000`
 
+**Note**: If nmap is not installed on your system, the application will automatically fall back to socket-based scanning for basic functionality.
+
 ## 🔐 Authentication
 
 Both versions include secure authentication:
