@@ -15,28 +15,151 @@ import time
 from datetime import datetime
 import subprocess
 import sys
+import uuid
+import hashlib
 
 class ReconHandler(http.server.BaseHTTPRequestHandler):
+    # Simple in-memory session store
+    sessions = {}
+    users = {
+        'admin': 'recon2024',
+        'user': 'password123'
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def get_session_id(self):
+        """Get session ID from cookies"""
+        cookies = self.parse_cookies()
+        return cookies.get('session_id')
+
+    def parse_cookies(self):
+        """Parse cookies from request headers"""
+        cookies = {}
+        if 'Cookie' in self.headers:
+            cookie_header = self.headers['Cookie']
+            for cookie in cookie_header.split(';'):
+                if '=' in cookie:
+                    name, value = cookie.strip().split('=', 1)
+                    cookies[name] = value
+        return cookies
+
+    def set_session_cookie(self, session_id):
+        """Set session cookie in response"""
+        self.send_header('Set-Cookie', f'session_id={session_id}; Path=/; HttpOnly')
+
+    def create_session(self, username):
+        """Create a new session for user"""
+        session_id = str(uuid.uuid4())
+        self.sessions[session_id] = {
+            'username': username,
+            'created': datetime.now()
+        }
+        return session_id
+
+    def get_current_user(self):
+        """Get current user from session"""
+        session_id = self.get_session_id()
+        if session_id and session_id in self.sessions:
+            session = self.sessions[session_id]
+            # Check if session is not expired (24 hours)
+            if (datetime.now() - session['created']).total_seconds() < 86400:
+                return session['username']
+        return None
+
+    def require_auth(self):
+        """Check if user is authenticated"""
+        user = self.get_current_user()
+        if not user:
+            self.redirect_to_login()
+            return False
+        return True
+
+    def redirect_to_login(self):
+        """Redirect to login page"""
+        self.send_response(302)
+        self.send_header('Location', '/login')
+        self.end_headers()
+
     def do_GET(self):
         if self.path == '/':
-            self.serve_index()
+            self.serve_landing()
+        elif self.path == '/login':
+            self.serve_login()
+        elif self.path == '/dashboard':
+            if self.require_auth():
+                self.serve_index()
+        elif self.path == '/logout':
+            self.handle_logout()
         elif self.path.startswith('/static/'):
             self.serve_static()
         else:
             self.send_error(404)
 
     def do_POST(self):
-        if self.path == '/scan':
-            self.handle_scan()
+        if self.path == '/login':
+            self.handle_login()
+        elif self.path == '/scan':
+            if self.require_auth():
+                self.handle_scan()
+            else:
+                self.send_error(401)
         else:
             self.send_error(404)
+
+    def serve_landing(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+
+        html_content = self.get_landing_html()
+        self.wfile.write(html_content.encode())
+
+    def serve_login(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+
+        html_content = self.get_login_html()
+        self.wfile.write(html_content.encode())
+
+    def handle_login(self):
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = urllib.parse.parse_qs(post_data.decode())
+
+        username = data.get('username', [''])[0]
+        password = data.get('password', [''])[0]
+
+        if username in self.users and self.users[username] == password:
+            session_id = self.create_session(username)
+            self.send_response(302)
+            self.set_session_cookie(session_id)
+            self.send_header('Location', '/dashboard')
+            self.end_headers()
+        else:
+            self.send_response(302)
+            self.send_header('Location', '/login?error=1')
+            self.end_headers()
+
+    def handle_logout(self):
+        session_id = self.get_session_id()
+        if session_id and session_id in self.sessions:
+            del self.sessions[session_id]
+
+        self.send_response(302)
+        self.send_header('Set-Cookie', 'session_id=; Path=/; HttpOnly; Max-Age=0')
+        self.send_header('Location', '/')
+        self.end_headers()
 
     def serve_index(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
 
-        html_content = self.get_index_html()
+        user = self.get_current_user()
+        html_content = self.get_index_html(user)
         self.wfile.write(html_content.encode())
 
     def serve_static(self):
@@ -303,7 +426,367 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
         }
         return services.get(port, 'unknown')
 
-    def get_index_html(self):
+    def get_landing_html(self):
+        """Return the HTML content for the landing page"""
+        return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔴 Red Teamer Pro - Automated Reconnaissance</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: white;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            text-align: center;
+            padding: 20px;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image:
+                radial-gradient(circle at 25% 25%, rgba(0, 212, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 75% 75%, rgba(255, 0, 110, 0.1) 0%, transparent 50%);
+            animation: float 20s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+        }
+        .hero-content {
+            position: relative;
+            z-index: 2;
+            max-width: 1200px;
+            width: 100%;
+        }
+        .logo {
+            font-size: 4rem;
+            font-weight: 900;
+            margin-bottom: 20px;
+            text-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
+            background: linear-gradient(45deg, #00d4ff, #ff006e, #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        @keyframes glow {
+            from { filter: brightness(1); }
+            to { filter: brightness(1.2); }
+        }
+        .tagline {
+            font-size: 1.5rem;
+            margin-bottom: 40px;
+            opacity: 0.9;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin: 60px 0;
+            max-width: 1000px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .feature-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .feature-card:hover {
+            transform: translateY(-10px);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+        .feature-icon { font-size: 3rem; margin-bottom: 20px; display: block; }
+        .feature-title { font-size: 1.3rem; font-weight: 600; margin-bottom: 15px; }
+        .feature-description { opacity: 0.8; line-height: 1.6; }
+        .cta-section { margin-top: 60px; }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(45deg, #00d4ff, #ff006e);
+            color: white;
+            padding: 15px 40px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+        }
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(0, 212, 255, 0.4);
+        }
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+            margin: 60px 0;
+            flex-wrap: wrap;
+        }
+        .stat { text-align: center; }
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 900;
+            color: #00d4ff;
+        }
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+        @media (max-width: 768px) {
+            .logo { font-size: 3rem; }
+            .tagline { font-size: 1.2rem; }
+            .features { grid-template-columns: 1fr; gap: 20px; }
+            .stats { gap: 30px; }
+            .stat-number { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <div class="hero-content">
+            <div class="logo">🔴 RED TEAMER PRO</div>
+            <p class="tagline">Revolutionary automated reconnaissance tool for cybersecurity professionals and CTF champions</p>
+
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-number">20+</div>
+                    <div class="stat-label">Ports Scanned</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">4</div>
+                    <div class="stat-label">Scan Modules</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-number">100%</div>
+                    <div class="stat-label">Python Native</div>
+                </div>
+            </div>
+
+            <div class="features">
+                <div class="feature-card">
+                    <span class="feature-icon">🔍</span>
+                    <div class="feature-title">Port Scanning</div>
+                    <div class="feature-description">Comprehensive port analysis with service detection and version identification using advanced nmap integration.</div>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">🖥️</span>
+                    <div class="feature-title">Service Enumeration</div>
+                    <div class="feature-description">Intelligent service banner grabbing and protocol analysis for FTP, SSH, HTTP, SMTP, and more.</div>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">📁</span>
+                    <div class="feature-title">Directory Busting</div>
+                    <div class="feature-description">Discover hidden directories and files with customizable wordlists and intelligent path detection.</div>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">⚠️</span>
+                    <div class="feature-title">Vulnerability Assessment</div>
+                    <div class="feature-description">Basic security vulnerability detection and actionable recommendations for remediation.</div>
+                </div>
+            </div>
+
+            <div class="cta-section">
+                <a href="/login" class="cta-button">🚀 Start Reconnaissance</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>"""
+
+    def get_login_html(self):
+        """Return the HTML content for the login page"""
+        error_param = ""
+        if "?" in self.path and "error=1" in self.path:
+            error_param = "?error=1"
+
+        error_html = ""
+        if error_param:
+            error_html = '''
+            <div style="background: rgba(255, 0, 110, 0.2); border: 1px solid rgba(255, 0, 110, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 20px; color: #ff006e; font-size: 0.9rem;">
+                Invalid username or password
+            </div>'''
+
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔴 Login - Red Teamer Pro</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }}
+        .login-container {{
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }}
+        .logo {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .logo-text {{
+            font-size: 2.5rem;
+            font-weight: 900;
+            background: linear-gradient(45deg, #00d4ff, #ff006e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }}
+        .subtitle {{
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 30px;
+            font-size: 0.9rem;
+        }}
+        .form-group {{ margin-bottom: 20px; }}
+        .form-label {{
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+        }}
+        .form-input {{
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }}
+        .form-input:focus {{
+            outline: none;
+            border-color: #00d4ff;
+            background: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }}
+        .form-input::placeholder {{ color: rgba(255, 255, 255, 0.5); }}
+        .login-btn {{
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(45deg, #00d4ff, #ff006e);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }}
+        .login-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.4);
+        }}
+        .demo-credentials {{
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }}
+        .demo-title {{
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #00d4ff;
+        }}
+        .demo-item {{
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+            color: rgba(255, 255, 255, 0.8);
+        }}
+        .back-link {{
+            text-align: center;
+            margin-top: 20px;
+        }}
+        .back-link a {{
+            color: #00d4ff;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }}
+        .back-link a:hover {{ color: #ff006e; }}
+        @media (max-width: 480px) {{
+            .login-container {{
+                padding: 30px 20px;
+                margin: 20px;
+            }}
+            .logo-text {{ font-size: 2rem; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <div class="logo-text">🔴 RED TEAMER PRO</div>
+        </div>
+        <div class="subtitle">Access your reconnaissance dashboard</div>
+        {error_html}
+        <form method="POST" action="/login">
+            <div class="form-group">
+                <label class="form-label" for="username">Username</label>
+                <input type="text" id="username" name="username" class="form-input" placeholder="Enter your username" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="password">Password</label>
+                <input type="password" id="password" name="password" class="form-input" placeholder="Enter your password" required>
+            </div>
+            <button type="submit" class="login-btn">🔓 Login to Dashboard</button>
+        </form>
+        <div class="demo-credentials">
+            <div class="demo-title">For Testing:</div>
+            <div class="demo-item">Username: <strong>admin</strong></div>
+            <div class="demo-item">Password: <strong>recon2024</strong></div>
+        </div>
+        <div class="back-link">
+            <a href="/">← Back to Home</a>
+        </div>
+    </div>
+</body>
+</html>"""
+
+    def get_index_html(self, user=None):
         """Return the HTML content for the main page"""
         return """<!DOCTYPE html>
 <html lang="en">
@@ -343,6 +826,41 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
             display: flex;
             align-items: center;
             justify-content: space-between;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        .logout-btn {
+            padding: 0.5rem 1rem;
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border: 1px solid #ef4444;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .logout-btn:hover {
+            background: #ef4444;
+            color: white;
         }
 
         .logo {
@@ -700,9 +1218,17 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
                 <i class="fas fa-shield-alt"></i>
                 <h1>Red Teamer Pro</h1>
             </div>
-            <div class="status">
-                <i class="fas fa-circle"></i>
-                <span>System Online</span>
+            <div class="user-info">
+                <div class="user-avatar">
+                    <i class="fas fa-user"></i>
+                </div>
+                <div>
+                    <div style="font-weight: 600; font-size: 0.9rem;">Welcome back!</div>
+                    <div style="font-size: 0.8rem; opacity: 0.8;">{user or 'User'}</div>
+                </div>
+                <a href="/logout" class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
             </div>
         </div>
     </header>
@@ -936,4 +1462,4 @@ def run_server(port=8000):
             httpd.shutdown()
 
 if __name__ == '__main__':
-    run_server()
+    run_server(8080)
