@@ -20,6 +20,7 @@ os.makedirs('modules', exist_ok=True)
 
 # Simple user database (in production, use proper database)
 USERS = {
+    'RooCodeHacker': 'roocode2025hackathon',
     'admin': 'recon2024',
     'user': 'password123'
 }

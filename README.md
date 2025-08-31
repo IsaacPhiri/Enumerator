@@ -62,13 +62,13 @@ python app.py
 
 Both versions include secure authentication:
 
-### Demo Credentials
-- **Username**: `admin`
-- **Password**: `recon2024`
+### Primary Demo Credentials
+- **Username**: `RooCodeHacker`
+- **Password**: `roocode2025hackathon`
 
-### Additional Test Account
-- **Username**: `user`
-- **Password**: `password123`
+### Additional Test Accounts
+- **Username**: `admin` | **Password**: `recon2024`
+- **Username**: `user` | **Password**: `password123`
 
 ### User Flow
 1. Visit the landing page
@@ -92,8 +92,8 @@ Both versions include secure authentication:
 3. **Visit the landing page** and click "Start Reconnaissance"
 
 4. **Login with demo credentials**:
-   - Username: `admin`
-   - Password: `recon2024`
+   - Username: `RooCodeHacker`
+   - Password: `roocode2025hackathon`
 
 5. **Access the dashboard** and start scanning
 
@@ -274,6 +274,7 @@ python app.py
 ```
 
 ### Demo Credentials
+- **Username**: `RooCodeHacker` | **Password**: `roocode2025hackathon`
 - **Username**: `admin` | **Password**: `recon2024`
 - **Username**: `user` | **Password**: `password123`
 
@@ -324,4 +325,4 @@ This project is for educational purposes. Use responsibly and ethically.
 ### Quick Access
 - **Standard Library**: `python simple_app.py` → `http://localhost:8080`
 - **Full-Featured**: `python app.py` → `http://localhost:5000`
-- **Demo Login**: `admin` / `recon2024`
+- **Demo Login**: `RooCodeHacker` / `roocode2025hackathon`

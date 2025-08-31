@@ -22,6 +22,7 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
     # Simple in-memory session store
     sessions = {}
     users = {
+        'RooCodeHacker': 'roocode2025hackathon',
         'admin': 'recon2024',
         'user': 'password123'
     }
@@ -614,6 +615,27 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
             <div class="cta-section">
                 <a href="/login" class="cta-button">🚀 Start Reconnaissance</a>
             </div>
+
+            <!-- Acknowledgments Section -->
+            <div class="acknowledgments" style="margin-top: 80px; text-align: center; padding: 40px 20px; background: rgba(255, 255, 255, 0.05); border-radius: 20px; backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1);">
+                <h3 style="color: #00d4ff; margin-bottom: 20px; font-size: 1.5rem;">🤝 Acknowledgments</h3>
+                <p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 15px; font-size: 1rem;">
+                    Built with ❤️ using cutting-edge AI technology
+                </p>
+                <div style="display: flex; justify-content: center; gap: 40px; flex-wrap: wrap; margin-top: 20px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.2rem; font-weight: 600; color: #00d4ff; margin-bottom: 5px;">🤖 RooCode AI</div>
+                        <div style="font-size: 0.9rem; color: rgba(255, 255, 255, 0.7);">VS Code Extension</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 1.2rem; font-weight: 600; color: #ff006e; margin-bottom: 5px;">🏆 Major League Hacking</div>
+                        <div style="font-size: 0.9rem; color: rgba(255, 255, 255, 0.7);">Hackathon Platform</div>
+                    </div>
+                </div>
+                <p style="color: rgba(255, 255, 255, 0.6); margin-top: 20px; font-size: 0.9rem;">
+                    Proud participant in the RooCode Hackathon 2025
+                </p>
+            </div>
         </div>
     </div>
 </body>
@@ -775,9 +797,10 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
             <button type="submit" class="login-btn">🔓 Login to Dashboard</button>
         </form>
         <div class="demo-credentials">
-            <div class="demo-title">For Testing:</div>
-            <div class="demo-item">Username: <strong>admin</strong></div>
-            <div class="demo-item">Password: <strong>recon2024</strong></div>
+            <div class="demo-title">Demo Credentials:</div>
+            <div class="demo-item">Username: <strong>RooCodeHacker</strong></div>
+            <div class="demo-item">Password: <strong>roocode2025hackathon</strong></div>
+            <div class="demo-item" style="margin-top: 10px; font-size: 0.8rem; opacity: 0.7;">Alternative: admin/recon2024</div>
         </div>
         <div class="back-link">
             <a href="/">← Back to Home</a>
