@@ -18,14 +18,85 @@ import sys
 import uuid
 import hashlib
 
+class UserManager:
+    def __init__(self, storage_file='users.json'):
+        self.storage_file = storage_file
+        self.users = self.load_users()
+
+    def load_users(self):
+        if os.path.exists(self.storage_file):
+            try:
+                with open(self.storage_file, 'r') as f:
+                    return json.load(f)
+            except:
+                return {}
+        return {}
+
+    def save_users(self):
+        try:
+            with open(self.storage_file, 'w') as f:
+                json.dump(self.users, f, indent=2, default=str)
+        except Exception as e:
+            print(f"Error saving users: {e}")
+
+    def create_user(self, username, email, password):
+        if username in self.users:
+            return False, "Username already exists"
+
+        # Check if email already exists
+        for user_data in self.users.values():
+            if user_data.get('email') == email:
+                return False, "Email already exists"
+
+        # Simple password hashing (in production, use proper hashing)
+        import hashlib
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+        self.users[username] = {
+            'email': email,
+            'password_hash': password_hash,
+            'created_at': datetime.now().isoformat(),
+            'last_login': None,
+            'is_active': True
+        }
+
+        self.save_users()
+        return True, "User created successfully"
+
+    def authenticate(self, username, password):
+        if username not in self.users:
+            return False
+
+        user = self.users[username]
+        if not user.get('is_active', True):
+            return False
+
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+        if user['password_hash'] == password_hash:
+            user['last_login'] = datetime.now().isoformat()
+            self.save_users()
+            return True
+
+        return False
+
+    def get_user(self, username):
+        return self.users.get(username)
+
 class ReconHandler(http.server.BaseHTTPRequestHandler):
     # Simple in-memory session store
     sessions = {}
-    users = {
-        'RooCodeHacker': 'roocode2025hackathon',
-        'admin': 'recon2024',
-        'user': 'password123'
-    }
+    user_manager = UserManager()
+
+    # Initialize demo users if they don't exist
+    if not user_manager.users:
+        demo_users = {
+            'RooCodeHacker': ('roocode2025hackathon', 'roocode@hackathon.local'),
+            'admin': ('recon2024', 'admin@demo.local'),
+            'user': ('password123', 'user@demo.local')
+        }
+
+        for username, (password, email) in demo_users.items():
+            user_manager.create_user(username, email, password)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -88,6 +159,8 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
             self.serve_landing()
         elif self.path == '/login':
             self.serve_login()
+        elif self.path == '/register':
+            self.serve_register()
         elif self.path == '/dashboard':
             if self.require_auth():
                 self.serve_index()
@@ -101,6 +174,8 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/login':
             self.handle_login()
+        elif self.path == '/register':
+            self.handle_register()
         elif self.path == '/scan':
             if self.require_auth():
                 self.handle_scan()
@@ -133,7 +208,7 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
         username = data.get('username', [''])[0]
         password = data.get('password', [''])[0]
 
-        if username in self.users and self.users[username] == password:
+        if self.user_manager.authenticate(username, password):
             session_id = self.create_session(username)
             self.send_response(302)
             self.set_session_cookie(session_id)
@@ -143,6 +218,57 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(302)
             self.send_header('Location', '/login?error=1')
             self.end_headers()
+
+    def serve_register(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+
+        html_content = self.get_register_html()
+        self.wfile.write(html_content.encode())
+
+    def handle_register(self):
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = urllib.parse.parse_qs(post_data.decode())
+
+        username = data.get('username', [''])[0]
+        email = data.get('email', [''])[0]
+        password = data.get('password', [''])[0]
+        confirm_password = data.get('confirm_password', [''])[0]
+
+        # Validation
+        if not all([username, email, password, confirm_password]):
+            self.redirect_with_error('/register', 'All fields are required')
+            return
+
+        if password != confirm_password:
+            self.redirect_with_error('/register', 'Passwords do not match')
+            return
+
+        if len(password) < 8:
+            self.redirect_with_error('/register', 'Password must be at least 8 characters long')
+            return
+
+        # Create user
+        success, message = self.user_manager.create_user(username, email, password)
+
+        if success:
+            self.redirect_with_success('/login', 'Account created successfully! Please log in.')
+        else:
+            self.redirect_with_error('/register', message)
+
+    def redirect_with_error(self, path, error_message):
+        """Redirect with error message"""
+        self.send_response(302)
+        self.send_header('Location', f'{path}?error={urllib.parse.quote(error_message, safe="")}')
+        self.end_headers()
+
+    def redirect_with_success(self, path, success_message):
+        """Redirect with success message"""
+        self.send_response(302)
+        self.send_header('Location', f'{path}?success={urllib.parse.quote(success_message, safe="")}')
+        self.end_headers()
 
     def handle_logout(self):
         session_id = self.get_session_id()
@@ -614,6 +740,9 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
 
             <div class="cta-section">
                 <a href="/login" class="cta-button">🚀 Start Reconnaissance</a>
+                <div style="margin-top: 20px;">
+                    <a href="/register" style="display: inline-block; padding: 12px 24px; background: rgba(255, 255, 255, 0.1); color: white; text-decoration: none; border-radius: 25px; border: 1px solid rgba(255, 255, 255, 0.3); transition: all 0.3s ease; font-weight: 500;">📝 Create Account</a>
+                </div>
             </div>
 
             <!-- Acknowledgments Section -->
@@ -653,6 +782,399 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
             <div style="background: rgba(255, 0, 110, 0.2); border: 1px solid rgba(255, 0, 110, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 20px; color: #ff006e; font-size: 0.9rem;">
                 Invalid username or password
             </div>'''
+
+    def get_register_html(self):
+        """Return the HTML content for the registration page"""
+        error_param = ""
+        success_param = ""
+
+        if "?" in self.path:
+            query_string = self.path.split("?", 1)[1]
+            params = urllib.parse.parse_qs(query_string)
+            if 'error' in params:
+                error_param = f'<div style="background: rgba(255, 0, 110, 0.2); border: 1px solid rgba(255, 0, 110, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 20px; color: #ff006e; font-size: 0.9rem;">{urllib.parse.unquote(params["error"][0])}</div>'
+            elif 'success' in params:
+                success_param = f'<div style="background: rgba(0, 255, 136, 0.2); border: 1px solid rgba(0, 255, 136, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 20px; color: #00ff88; font-size: 0.9rem;">{urllib.parse.unquote(params["success"][0])}</div>'
+
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔐 Register - Red Teamer Pro</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }}
+        .register-container {{
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }}
+        .register-header {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .register-header h2 {{
+            font-size: 2.5rem;
+            font-weight: 900;
+            background: linear-gradient(45deg, #00d4ff, #ff006e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }}
+        .register-header p {{
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+        }}
+        .form-group {{
+            margin-bottom: 20px;
+        }}
+        .form-group label {{
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+        }}
+        .form-group input {{
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }}
+        .form-group input:focus {{
+            outline: none;
+            border-color: #00d4ff;
+            background: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }}
+        .form-group input::placeholder {{
+            color: rgba(255, 255, 255, 0.5);
+        }}
+        .form-group small {{
+            display: block;
+            margin-top: 5px;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.8rem;
+        }}
+        .register-btn {{
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(45deg, #00d4ff, #ff006e);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }}
+        .register-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.4);
+        }}
+        .login-link {{
+            text-align: center;
+            margin-top: 20px;
+        }}
+        .login-link a {{
+            color: #00d4ff;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }}
+        .login-link a:hover {{
+            color: #ff006e;
+        }}
+        .back-link {{
+            text-align: center;
+            margin-top: 15px;
+        }}
+        .back-link a {{
+            color: rgba(255, 255, 255, 0.6);
+            text-decoration: none;
+            font-size: 0.8rem;
+            transition: color 0.3s ease;
+        }}
+        .back-link a:hover {{
+            color: #00d4ff;
+        }}
+        @media (max-width: 480px) {{
+            .register-container {{
+                padding: 30px 20px;
+                margin: 20px;
+            }}
+            .register-header h2 {{
+                font-size: 2rem;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <div class="register-header">
+            <h2>🔐 Create Account</h2>
+            <p>Join Red Teamer Pro</p>
+        </div>
+
+        {error_param}
+        {success_param}
+
+        <form method="POST" action="/register">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username"
+                       placeholder="Choose a username" required minlength="3" maxlength="30">
+                <small>3-30 characters, letters and numbers only</small>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" id="email" name="email"
+                       placeholder="Enter your email" required>
+                <small>We'll never share your email</small>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password"
+                       placeholder="Create a password" required minlength="8">
+                <small>Minimum 8 characters</small>
+            </div>
+
+            <div class="form-group">
+                <label for="confirm_password">Confirm Password</label>
+                <input type="password" id="confirm_password" name="confirm_password"
+                       placeholder="Confirm your password" required minlength="8">
+            </div>
+
+            <button type="submit" class="register-btn">Create Account</button>
+        </form>
+
+        <div class="login-link">
+            <p>Already have an account? <a href="/login">Sign In</a></p>
+        </div>
+
+        <div class="back-link">
+            <a href="/">← Back to Home</a>
+        </div>
+    </div>
+
+    <script>
+        // Password confirmation validation
+        const password = document.getElementById('password');
+        const confirmPassword = document.getElementById('confirm_password');
+
+        function validatePasswords() {{
+            if (password.value !== confirmPassword.value) {{
+                confirmPassword.setCustomValidity("Passwords don't match");
+            }} else {{
+                confirmPassword.setCustomValidity('');
+            }}
+        }}
+
+        password.addEventListener('change', validatePasswords);
+        confirmPassword.addEventListener('keyup', validatePasswords);
+    </script>
+</body>
+</html>"""
+
+    def get_login_html(self):
+        """Return the HTML content for the login page"""
+        error_param = ""
+        if "?" in self.path and "error=1" in self.path:
+            error_param = '''
+            <div style="background: rgba(255, 0, 110, 0.2); border: 1px solid rgba(255, 0, 110, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 20px; color: #ff006e; font-size: 0.9rem;">
+                Invalid username or password
+            </div>'''
+
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔴 Login - Red Teamer Pro</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }}
+        .login-container {{
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }}
+        .logo {{
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .logo-text {{
+            font-size: 2.5rem;
+            font-weight: 900;
+            background: linear-gradient(45deg, #00d4ff, #ff006e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }}
+        .subtitle {{
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            margin-bottom: 30px;
+            font-size: 0.9rem;
+        }}
+        .form-group {{ margin-bottom: 20px; }}
+        .form-label {{
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+        }}
+        .form-input {{
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }}
+        .form-input:focus {{
+            outline: none;
+            border-color: #00d4ff;
+            background: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+        }}
+        .form-input::placeholder {{ color: rgba(255, 255, 255, 0.5); }}
+        .login-btn {{
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(45deg, #00d4ff, #ff006e);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+        }}
+        .login-btn:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.4);
+        }}
+        .demo-credentials {{
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }}
+        .demo-title {{
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #00d4ff;
+        }}
+        .demo-item {{
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+            color: rgba(255, 255, 255, 0.8);
+        }}
+        .register-link {{
+            text-align: center;
+            margin-bottom: 15px;
+        }}
+        .register-link a {{
+            color: #00d4ff;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }}
+        .register-link a:hover {{ color: #ff006e; }}
+        .back-link {{
+            text-align: center;
+            margin-top: 20px;
+        }}
+        .back-link a {{
+            color: #00d4ff;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }}
+        .back-link a:hover {{ color: #ff006e; }}
+        @media (max-width: 480px) {{
+            .login-container {{
+                padding: 30px 20px;
+                margin: 20px;
+            }}
+            .logo-text {{ font-size: 2rem; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <div class="logo-text">🔴 RED TEAMER PRO</div>
+        </div>
+        <div class="subtitle">Access your reconnaissance dashboard</div>
+        {error_param}
+        <form method="POST" action="/login">
+            <div class="form-group">
+                <label class="form-label" for="username">Username</label>
+                <input type="text" id="username" name="username" class="form-input" placeholder="Enter your username" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="password">Password</label>
+                <input type="password" id="password" name="password" class="form-input" placeholder="Enter your password" required>
+            </div>
+            <button type="submit" class="login-btn">🔓 Login to Dashboard</button>
+        </form>
+        <div class="demo-credentials">
+            <div class="demo-title">Demo Credentials:</div>
+            <div class="demo-item">Username: <strong>RooCodeHacker</strong></div>
+            <div class="demo-item">Password: <strong>roocode2025hackathon</strong></div>
+            <div class="demo-item" style="margin-top: 10px; font-size: 0.8rem; opacity: 0.7;">Alternative: admin/recon2024</div>
+        </div>
+        <div class="register-link">
+            <p>Don't have an account? <a href="/register">Create one</a></p>
+        </div>
+        <div class="back-link">
+            <a href="/">← Back to Home</a>
+        </div>
+    </div>
+</body>
+</html>"""
 
         return f"""<!DOCTYPE html>
 <html lang="en">
@@ -1247,7 +1769,7 @@ class ReconHandler(http.server.BaseHTTPRequestHandler):
                 </div>
                 <div>
                     <div style="font-weight: 600; font-size: 0.9rem;">Welcome back!</div>
-                    <div style="font-size: 0.8rem; opacity: 0.8;">{user or 'User'}</div>
+                    <div style="font-size: 0.8rem; opacity: 0.8;">{user if user else 'User'}</div>
                 </div>
                 <a href="/logout" class="logout-btn">
                     <i class="fas fa-sign-out-alt"></i> Logout

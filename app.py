@@ -4,34 +4,134 @@ import subprocess
 import json
 from datetime import datetime
 from functools import wraps
+from sqlalchemy.exc import IntegrityError
 from modules.port_scanner import PortScanner, format_scan_results
 from modules.service_enumerator import ServiceEnumerator, format_service_results
 from modules.dir_buster import DirectoryBuster, format_dirbust_results
 from modules.vuln_scanner import VulnerabilityScanner, format_vuln_results
 
+# Database imports
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+
 app = Flask(__name__)
 app.secret_key = 'red-teamer-pro-secret-key-2024'
 app.config['SESSION_TYPE'] = 'filesystem'
+
+# Database configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
 # Ensure directories exist
 os.makedirs('templates', exist_ok=True)
 os.makedirs('static', exist_ok=True)
 os.makedirs('modules', exist_ok=True)
 
-# Simple user database (in production, use proper database)
-USERS = {
-    'RooCodeHacker': 'roocode2025hackathon',
-    'admin': 'recon2024',
-    'user': 'password123'
-}
+# User model
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login = db.Column(db.DateTime)
+    is_active = db.Column(db.Boolean, default=True)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'username': self.username,
+            'email': self.email,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_login': self.last_login.isoformat() if self.last_login else None,
+            'is_active': self.is_active
+        }
+
+# Initialize database
+with app.app_context():
+    db.create_all()
+
+    # Migrate existing demo users to database
+    demo_users = {
+        'RooCodeHacker': ('roocode2025hackathon', 'roocode@hackathon.local'),
+        'admin': ('recon2024', 'admin@demo.local'),
+        'user': ('password123', 'user@demo.local')
+    }
+
+    for username, (password, email) in demo_users.items():
+        if not User.query.filter_by(username=username).first():
+            user = User(username=username, email=email)
+            user.set_password(password)
+            db.session.add(user)
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
 
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'user' not in session:
+        if 'user_id' not in session:
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+
+        # Validation
+        if not all([username, email, password, confirm_password]):
+            flash('All fields are required')
+            return redirect(url_for('register'))
+
+        if password != confirm_password:
+            flash('Passwords do not match')
+            return redirect(url_for('register'))
+
+        if len(password) < 8:
+            flash('Password must be at least 8 characters long')
+            return redirect(url_for('register'))
+
+        # Check if username or email already exists
+        existing_user = User.query.filter(
+            (User.username == username) | (User.email == email)
+        ).first()
+
+        if existing_user:
+            if existing_user.username == username:
+                flash('Username already exists')
+            else:
+                flash('Email already exists')
+            return redirect(url_for('register'))
+
+        # Create new user
+        new_user = User(username=username, email=email)
+        new_user.set_password(password)
+
+        try:
+            db.session.add(new_user)
+            db.session.commit()
+            flash('Account created successfully! Please log in.')
+            return redirect(url_for('login'))
+        except Exception as e:
+            db.session.rollback()
+            flash('An error occurred. Please try again.')
+            return redirect(url_for('register'))
+
+    return render_template('register.html')
 
 @app.route('/')
 def landing():
@@ -40,7 +140,8 @@ def landing():
 @app.route('/dashboard')
 @login_required
 def index():
-    return render_template('index.html')
+    user = User.query.get(session['user_id'])
+    return render_template('index.html', user=user)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -48,18 +149,24 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
 
-        if username in USERS and USERS[username] == password:
-            session['user'] = username
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password) and user.is_active:
+            session['user_id'] = user.id
+            session['username'] = user.username
+            user.last_login = datetime.utcnow()
+            db.session.commit()
             return redirect(url_for('index'))
         else:
-            return render_template('login.html', error='Invalid username or password')
+            flash('Invalid username or password')
+            return redirect(url_for('login'))
 
     return render_template('login.html')
 
 @app.route('/logout')
 @login_required
 def logout():
-    session.pop('user', None)
+    session.pop('user_id', None)
+    session.pop('username', None)
     return redirect(url_for('landing'))
 
 @app.route('/scan', methods=['POST'])

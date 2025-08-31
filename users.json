@@ -1,0 +1,44 @@
+{
+  "RooCodeHacker": {
+    "email": "roocode@hackathon.local",
+    "password_hash": "6bada928143239ea161abbe01a57c9bd1479fee0a389e2bb64c5bdb644ee3427",
+    "created_at": "2025-08-31T17:54:56.494749",
+    "last_login": null,
+    "is_active": true
+  },
+  "admin": {
+    "email": "admin@demo.local",
+    "password_hash": "c47d22f5d75ce198b54dad5577c7999c1ad7bf384bf7b42c1e4d731c21ea9434",
+    "created_at": "2025-08-31T17:54:56.496137",
+    "last_login": null,
+    "is_active": true
+  },
+  "user": {
+    "email": "user@demo.local",
+    "password_hash": "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+    "created_at": "2025-08-31T17:54:56.497263",
+    "last_login": null,
+    "is_active": true
+  },
+  "admin1": {
+    "email": "admin@admin.com",
+    "password_hash": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
+    "created_at": "2025-08-31T18:00:41.032230",
+    "last_login": null,
+    "is_active": true
+  },
+  "admin3": {
+    "email": "admin3@email.com",
+    "password_hash": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
+    "created_at": "2025-08-31T18:14:17.902450",
+    "last_login": null,
+    "is_active": true
+  },
+  "admin5": {
+    "email": "admin5@gmail.com",
+    "password_hash": "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8",
+    "created_at": "2025-08-31T18:21:32.364594",
+    "last_login": "2025-08-31T18:22:01.778589",
+    "is_active": true
+  }
+}
